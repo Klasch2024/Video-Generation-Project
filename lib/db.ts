@@ -167,16 +167,16 @@ export async function getStats() {
   const { rows: [c] } = await sql<{
     total_videos: string; total_parts: string;
     youtube_posted: string; tiktok_posted: string;
-    completed: string; in_progress: string;
+    completed: string; in_progress: string; planned: string;
   }>`
     SELECT
-      COUNT(DISTINCT v.id)::text AS total_videos,
-      COUNT(p.id)::text          AS total_parts,
-      SUM(CASE WHEN v.youtube_posted THEN 1 ELSE 0 END)::text AS youtube_posted,
-      SUM(CASE WHEN v.tiktok_posted  THEN 1 ELSE 0 END)::text AS tiktok_posted,
-      SUM(CASE WHEN v.status='completed'   THEN 1 ELSE 0 END)::text AS completed,
-      SUM(CASE WHEN v.status='in_progress' THEN 1 ELSE 0 END)::text AS in_progress
-    FROM videos v LEFT JOIN video_parts p ON p.video_id=v.id`;
+      (SELECT COUNT(*)::text FROM videos)                                  AS total_videos,
+      (SELECT COUNT(*)::text FROM video_parts)                             AS total_parts,
+      (SELECT COUNT(*)::text FROM videos WHERE youtube_posted = true)      AS youtube_posted,
+      (SELECT COUNT(*)::text FROM videos WHERE tiktok_posted  = true)      AS tiktok_posted,
+      (SELECT COUNT(*)::text FROM videos WHERE status = 'completed')       AS completed,
+      (SELECT COUNT(*)::text FROM videos WHERE status = 'in_progress')     AS in_progress,
+      (SELECT COUNT(*)::text FROM videos WHERE status = 'planned')         AS planned`;
   return {
     totalVideos:   Number(c.total_videos),
     totalParts:    Number(c.total_parts),
@@ -184,5 +184,6 @@ export async function getStats() {
     tiktokPosted:  Number(c.tiktok_posted),
     completed:     Number(c.completed),
     inProgress:    Number(c.in_progress),
+    planned:       Number(c.planned),
   };
 }

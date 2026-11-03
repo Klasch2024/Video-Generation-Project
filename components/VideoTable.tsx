@@ -1,21 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
-import { ChevronDown, ChevronRight, Download, ExternalLink, Trash2 } from "lucide-react";
-import type { Video, VideoStatus } from "@/lib/db";
-import { StatusBadge } from "./StatusBadge";
-import { PlatformBadge } from "./PlatformBadge";
+import { Download, ExternalLink, Trash2, Plus, Check, X, Music, Link2 } from "lucide-react";
+import type { Video, VideoStatus, VideoPart } from "@/lib/db";
 
-function cn(...c: (string | false | undefined)[]) {
+function cn(...c: (string | false | undefined | null)[]) {
   return c.filter(Boolean).join(" ");
 }
 
-function formatTopic(topic: string | null) {
-  return topic ?? "—";
-}
-
-async function patch(id: number, body: Record<string, unknown>) {
+async function apiPatch(id: number, body: Record<string, unknown>) {
   await fetch(`/api/videos/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
@@ -23,36 +16,335 @@ async function patch(id: number, body: Record<string, unknown>) {
   });
 }
 
-export function VideoTable({
-  videos: initial,
+const STATUS_STYLES: Record<VideoStatus, string> = {
+  planned:     "bg-base-700 text-base-300",
+  in_progress: "bg-warning-500/15 text-warning-500",
+  completed:   "bg-success-500/15 text-success-500",
+};
+
+const STATUS_LABELS: Record<VideoStatus, string> = {
+  planned:     "Planned",
+  in_progress: "In Progress",
+  completed:   "Completed",
+};
+
+// ─── Inline status dropdown ───────────────────────────────────────────────────
+function StatusPill({
+  status,
+  onChange,
 }: {
-  videos: Video[];
+  status: VideoStatus;
+  onChange: (s: VideoStatus) => void;
 }) {
-  const [videos, setVideos] = useState(initial);
-  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  return (
+    <select
+      value={status}
+      onChange={(e) => onChange(e.target.value as VideoStatus)}
+      className={cn(
+        "cursor-pointer appearance-none rounded-full border-0 px-3 py-1 text-xs font-semibold outline-none",
+        STATUS_STYLES[status]
+      )}
+    >
+      <option value="planned">Planned</option>
+      <option value="in_progress">In Progress</option>
+      <option value="completed">Completed</option>
+    </select>
+  );
+}
 
-  function toggle(id: number) {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
+// ─── Platform toggle button ───────────────────────────────────────────────────
+function PlatformToggle({
+  label,
+  posted,
+  onToggle,
+}: {
+  label: string;
+  posted: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      onClick={onToggle}
+      title={posted ? `${label}: posted` : `${label}: not posted — click to mark`}
+      className={cn(
+        "flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-colors",
+        posted
+          ? "bg-success-500/15 text-success-500"
+          : "bg-base-700 text-base-500 hover:text-base-300"
+      )}
+    >
+      {posted && <Check className="h-3 w-3" />}
+      {label}
+    </button>
+  );
+}
+
+// ─── Inline add-part form ─────────────────────────────────────────────────────
+function AddPartInline({
+  videoId,
+  nextPart,
+  onAdded,
+}: {
+  videoId: number;
+  nextPart: number;
+  onAdded: (part: VideoPart) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [gofile, setGofile] = useState("");
+  const [download, setDownload] = useState("");
+  const [error, setError] = useState("");
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    const res = await fetch(`/api/videos/${videoId}/parts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        part_number: nextPart,
+        gofile_url: gofile.trim() || undefined,
+        download_url: download.trim() || undefined,
+      }),
     });
+    if (!res.ok) {
+      setError("Failed to add part.");
+      setLoading(false);
+      return;
+    }
+    const part = await res.json();
+    onAdded(part);
+    setGofile("");
+    setDownload("");
+    setOpen(false);
+    setLoading(false);
   }
 
-  async function handleStatus(id: number, status: VideoStatus) {
-    await patch(id, { status });
-    setVideos((v) => v.map((x) => (x.id === id ? { ...x, status } : x)));
-  }
-
-  async function handleToggle(id: number, field: "tiktok_posted" | "youtube_posted", current: boolean) {
-    await patch(id, { [field]: !current });
-    setVideos((v) =>
-      v.map((x) => (x.id === id ? { ...x, [field]: !current } : x))
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="flex items-center gap-1.5 text-xs font-medium text-base-500 hover:text-base-300 transition-colors py-2"
+      >
+        <Plus className="h-3.5 w-3.5" />
+        Add part {nextPart}
+      </button>
     );
   }
 
+  return (
+    <form onSubmit={submit} className="flex flex-wrap items-center gap-2 py-2">
+      <span className="w-16 text-xs font-semibold text-base-400">Part {nextPart}</span>
+      <input
+        type="url"
+        placeholder="Gofile URL (view)"
+        value={gofile}
+        onChange={(e) => setGofile(e.target.value)}
+        className="h-8 flex-1 min-w-[180px] rounded-lg border border-base-600 bg-base-900 px-3 text-xs text-base-100 placeholder:text-base-600 outline-none focus:border-accent-600"
+      />
+      <input
+        type="url"
+        placeholder="Download URL (tmpfiles)"
+        value={download}
+        onChange={(e) => setDownload(e.target.value)}
+        className="h-8 flex-1 min-w-[180px] rounded-lg border border-base-600 bg-base-900 px-3 text-xs text-base-100 placeholder:text-base-600 outline-none focus:border-accent-600"
+      />
+      {error && <span className="text-xs text-danger-500">{error}</span>}
+      <button
+        type="submit"
+        disabled={loading}
+        className="h-8 rounded-lg bg-base-700 px-3 text-xs font-semibold text-base-200 hover:bg-base-600 disabled:opacity-50"
+      >
+        {loading ? "…" : "Save"}
+      </button>
+      <button
+        type="button"
+        onClick={() => setOpen(false)}
+        className="h-8 rounded-lg px-2 text-base-500 hover:text-base-300"
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
+    </form>
+  );
+}
+
+// ─── Video card ───────────────────────────────────────────────────────────────
+function VideoCard({
+  video: initial,
+  onDelete,
+}: {
+  video: Video;
+  onDelete: (id: number) => void;
+}) {
+  const [video, setVideo] = useState(initial);
+
+  async function handleStatus(status: VideoStatus) {
+    await apiPatch(video.id, { status });
+    setVideo((v) => ({ ...v, status }));
+  }
+
+  async function handlePlatform(field: "youtube_posted" | "tiktok_posted") {
+    const next = !video[field];
+    await apiPatch(video.id, { [field]: next });
+    setVideo((v) => ({ ...v, [field]: next }));
+  }
+
+  async function handleDeletePart(partId: number) {
+    await fetch(`/api/videos/${video.id}/parts?partId=${partId}`, { method: "DELETE" });
+    setVideo((v) => ({ ...v, parts: v.parts?.filter((p) => p.id !== partId) }));
+  }
+
+  function handlePartAdded(part: VideoPart) {
+    setVideo((v) => ({ ...v, parts: [...(v.parts ?? []), part] }));
+  }
+
+  const parts = video.parts ?? [];
+  const nextPart = parts.length + 1;
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-base-700 bg-base-850">
+      {/* ── Card header ── */}
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-base-700 bg-base-800/60 px-5 py-4">
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-semibold text-base-50 leading-snug">
+            {video.title}
+          </h3>
+          <div className="mt-1 flex flex-wrap items-center gap-3">
+            {video.topic && (
+              <span className="text-xs text-base-500">{video.topic}</span>
+            )}
+            {video.bg_music_url && (
+              <a
+                href={video.bg_music_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-xs text-base-500 hover:text-base-300 transition-colors"
+              >
+                <Music className="h-3 w-3" />
+                Music
+              </a>
+            )}
+            {video.thread_url && (
+              <a
+                href={video.thread_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-xs text-base-500 hover:text-base-300 transition-colors"
+              >
+                <Link2 className="h-3 w-3" />
+                Thread
+              </a>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusPill status={video.status} onChange={handleStatus} />
+          <PlatformToggle
+            label="YouTube"
+            posted={video.youtube_posted}
+            onToggle={() => handlePlatform("youtube_posted")}
+          />
+          <PlatformToggle
+            label="TikTok"
+            posted={video.tiktok_posted}
+            onToggle={() => handlePlatform("tiktok_posted")}
+          />
+          <button
+            onClick={() => {
+              if (confirm(`Delete "${video.title}" and all its parts?`)) {
+                onDelete(video.id);
+              }
+            }}
+            className="rounded-lg p-1.5 text-base-600 hover:bg-base-700 hover:text-danger-500 transition-colors"
+            title="Delete video"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {/* ── Parts table ── */}
+      <div className="divide-y divide-base-700/60">
+        {parts.length === 0 && (
+          <div className="px-5 py-3 text-xs text-base-600 italic">No parts yet</div>
+        )}
+
+        {parts.map((p) => (
+          <div
+            key={p.id}
+            className="grid grid-cols-[64px_1fr_1fr_32px] items-center gap-3 px-5 py-2.5 hover:bg-base-800/40 transition-colors"
+          >
+            <span className="text-xs font-semibold text-base-400">
+              Part {p.part_number}
+            </span>
+
+            {/* Gofile / view */}
+            {p.gofile_url ? (
+              <a
+                href={p.gofile_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-xs text-base-300 hover:text-accent-500 transition-colors truncate"
+              >
+                <ExternalLink className="h-3 w-3 flex-shrink-0" />
+                <span className="truncate">{p.gofile_url.replace("https://gofile.io/d/", "gofile/")}</span>
+              </a>
+            ) : (
+              <span className="text-xs text-base-600">— no view link</span>
+            )}
+
+            {/* Download */}
+            {p.download_url ? (
+              <a
+                href={p.download_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-xs text-base-300 hover:text-accent-500 transition-colors truncate"
+              >
+                <Download className="h-3 w-3 flex-shrink-0" />
+                <span className="truncate">Download MP4</span>
+              </a>
+            ) : (
+              <span className="text-xs text-base-600">— no download</span>
+            )}
+
+            <button
+              onClick={() => handleDeletePart(p.id)}
+              className="justify-self-end rounded p-1 text-base-700 hover:text-danger-500 transition-colors"
+              title="Remove part"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        ))}
+
+        {/* Add part */}
+        <div className="px-5">
+          <AddPartInline
+            videoId={video.id}
+            nextPart={nextPart}
+            onAdded={handlePartAdded}
+          />
+        </div>
+      </div>
+
+      {/* ── Description ── */}
+      {video.description && (
+        <div className="border-t border-base-700/60 px-5 py-3">
+          <p className="text-xs leading-relaxed text-base-500">{video.description}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main export ──────────────────────────────────────────────────────────────
+export function VideoTable({ videos: initial }: { videos: Video[] }) {
+  const [videos, setVideos] = useState(initial);
+
   async function handleDelete(id: number) {
-    if (!confirm("Delete this video and all its parts?")) return;
     await fetch(`/api/videos/${id}`, { method: "DELETE" });
     setVideos((v) => v.filter((x) => x.id !== id));
   }
@@ -66,163 +358,10 @@ export function VideoTable({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-base-700">
-      {/* Header */}
-      <div className="grid grid-cols-[1fr_110px_130px_140px_80px_44px] items-center gap-4 border-b border-base-700 bg-base-900 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-base-500">
-        <span>Title / Topic</span>
-        <span>Parts</span>
-        <span>Status</span>
-        <span>Platforms</span>
-        <span className="text-right">Links</span>
-        <span />
-      </div>
-
-      {/* Rows */}
-      <div className="divide-y divide-base-700">
-        {videos.map((v) => {
-          const open = expanded.has(v.id);
-          const partCount = v.parts?.length ?? 0;
-          return (
-            <div key={v.id}>
-              {/* Main row */}
-              <div className="grid grid-cols-[1fr_110px_130px_140px_80px_44px] items-center gap-4 px-4 py-3 transition-colors hover:bg-base-800">
-                {/* Title */}
-                <div className="flex min-w-0 items-center gap-2">
-                  <button
-                    onClick={() => toggle(v.id)}
-                    className="flex-shrink-0 rounded p-0.5 text-base-500 hover:text-base-200"
-                    aria-label="expand"
-                  >
-                    {open
-                      ? <ChevronDown className="h-4 w-4" />
-                      : <ChevronRight className="h-4 w-4" />}
-                  </button>
-                  <div className="min-w-0">
-                    <Link
-                      href={`/videos/${v.id}`}
-                      className="truncate text-sm font-semibold text-base-100 hover:text-accent-500"
-                    >
-                      {v.title}
-                    </Link>
-                    {v.topic && (
-                      <div className="mt-0.5 text-[11px] text-base-500">
-                        {formatTopic(v.topic)}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Parts */}
-                <span className="text-sm text-base-400">
-                  {partCount} {partCount === 1 ? "part" : "parts"}
-                </span>
-
-                {/* Status select */}
-                <select
-                  value={v.status}
-                  onChange={(e) => handleStatus(v.id, e.target.value as VideoStatus)}
-                  className="w-full rounded-lg border border-base-600 bg-base-800 px-2 py-1 text-[11px] font-medium text-base-200 outline-none focus:border-accent-500"
-                >
-                  <option value="planned">Planned</option>
-                  <option value="in_progress">In Progress</option>
-                  <option value="completed">Completed</option>
-                </select>
-
-                {/* Platforms */}
-                <div className="flex flex-wrap gap-1.5">
-                  <button onClick={() => handleToggle(v.id, "youtube_posted", v.youtube_posted)}>
-                    <PlatformBadge label="YT" posted={v.youtube_posted} />
-                  </button>
-                  <button onClick={() => handleToggle(v.id, "tiktok_posted", v.tiktok_posted)}>
-                    <PlatformBadge label="TT" posted={v.tiktok_posted} />
-                  </button>
-                </div>
-
-                {/* Links */}
-                <div className="flex justify-end gap-1">
-                  {v.thread_url && (
-                    <a
-                      href={v.thread_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="rounded-lg p-1.5 text-base-500 hover:bg-base-700 hover:text-base-200"
-                      title="Source thread"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </a>
-                  )}
-                </div>
-
-                {/* Delete */}
-                <button
-                  onClick={() => handleDelete(v.id)}
-                  className="flex justify-center rounded-lg p-1.5 text-base-600 hover:bg-base-700 hover:text-danger-500"
-                  title="Delete video"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
-
-              {/* Parts drawer */}
-              {open && (
-                <div className="border-t border-base-700 bg-base-900 px-4 py-3">
-                  {partCount === 0 ? (
-                    <p className="text-xs text-base-500">No parts yet.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {v.parts!.map((p) => (
-                        <div
-                          key={p.id}
-                          className="flex items-center gap-4 rounded-lg border border-base-700 bg-base-850 px-4 py-2.5"
-                        >
-                          <span className="w-16 text-xs font-semibold text-base-400">
-                            Part {p.part_number}
-                          </span>
-                          {p.gofile_url && (
-                            <a
-                              href={p.gofile_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex items-center gap-1.5 text-xs text-base-300 hover:text-accent-500"
-                            >
-                              <ExternalLink className="h-3 w-3" />
-                              View
-                            </a>
-                          )}
-                          {p.download_url && (
-                            <a
-                              href={p.download_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex items-center gap-1.5 text-xs text-base-300 hover:text-accent-500"
-                            >
-                              <Download className="h-3 w-3" />
-                              Download
-                            </a>
-                          )}
-                          {p.duration_seconds && (
-                            <span className="ml-auto text-xs text-base-500">
-                              {Math.floor(p.duration_seconds / 60)}m {p.duration_seconds % 60}s
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <div className="mt-3 flex justify-end">
-                    <Link
-                      href={`/videos/${v.id}`}
-                      className="text-xs font-medium text-base-400 hover:text-accent-500"
-                    >
-                      Manage parts →
-                    </Link>
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+    <div className="space-y-4">
+      {videos.map((v) => (
+        <VideoCard key={v.id} video={v} onDelete={handleDelete} />
+      ))}
     </div>
   );
 }
