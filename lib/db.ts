@@ -45,9 +45,12 @@ async function writeStore(store: Store): Promise<void> {
   const token = process.env.VERCEL_API_TOKEN;
   if (!token) throw new Error("VERCEL_API_TOKEN env var is not set");
 
-  const res = await fetch(
-    `https://api.vercel.com/v1/edge-config/${EDGE_CONFIG_ID}/items`,
-    {
+  const TEAM = "team_KpSGTlYqKeohdDNcYucm39WE";
+
+  // Try global-config endpoint first, fall back to edge-config
+  for (const base of ["global-config", "edge-config"]) {
+    const url = `https://api.vercel.com/v1/${base}/${EDGE_CONFIG_ID}/items?teamId=${TEAM}`;
+    const res = await fetch(url, {
       method: "PATCH",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -56,12 +59,15 @@ async function writeStore(store: Store): Promise<void> {
       body: JSON.stringify({
         items: [{ operation: "upsert", key: "store", value: store }],
       }),
-    }
-  );
-  if (!res.ok) {
+    });
+    if (res.ok) return;
     const text = await res.text();
-    throw new Error(`Edge Config write failed: ${text}`);
+    // only retry on 404; any other error is fatal
+    if (!text.includes("not_found")) {
+      throw new Error(`Config write failed (${base}): ${text}`);
+    }
   }
+  throw new Error("Could not write to Global Config — check VERCEL_API_TOKEN permissions");
 }
 
 export async function setupSchema() {
