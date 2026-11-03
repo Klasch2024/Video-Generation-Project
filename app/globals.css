@@ -1,0 +1,60 @@
+@import url("https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Bricolage+Grotesque:wght@700;800&display=swap");
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+
+  /* Pure black & white palette.
+     Same token names as the lead dashboard so components port cleanly. */
+  --color-base-950: #000000;   /* sidebar, page bg */
+  --color-base-900: #0a0a0a;
+  --color-base-850: #111111;   /* cards, panels */
+  --color-base-800: #1a1a1a;   /* hover fills */
+  --color-base-700: #222222;   /* borders */
+  --color-base-600: #2e2e2e;   /* stronger borders */
+  --color-base-500: #666666;   /* muted */
+  --color-base-400: #888888;   /* secondary text */
+  --color-base-300: #aaaaaa;   /* body */
+  --color-base-200: #cccccc;   /* labels */
+  --color-base-100: #e0e0e0;   /* headings */
+  --color-base-50:  #f5f5f5;   /* strongest text */
+  --color-ink:      #000000;   /* text on white fills */
+
+  /* Accent: white */
+  --color-accent-800: #999999;
+  --color-accent-700: #cccccc;
+  --color-accent-600: #dddddd;
+  --color-accent-500: #ffffff;
+  --color-accent-400: #f0f0f0;
+  --color-accent-300: #e8e8e8;
+
+  /* Status — kept vivid enough to read on dark */
+  --color-success-500: #4ade80;
+  --color-success-700: #4ade80;
+  --color-warning-500: #facc15;
+  --color-warning-700: #facc15;
+  --color-danger-500:  #f87171;
+  --color-danger-700:  #f87171;
+  --color-info-500:    #60a5fa;
+  --color-info-700:    #60a5fa;
+
+  --radius-xl: 1rem;
+  --radius-lg: 0.75rem;
+  --radius-md: 0.5rem;
+
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.6);
+  --shadow-pill: 0 1px 2px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+html {
+  color-scheme: dark;
+  background-color: #000000;
+}
+
+body {
+  font-family: var(--font-sans);
+  color: var(--color-base-100);
+  background-color: var(--color-base-950);
+  -webkit-font-smoothing: antialiased;
+}
