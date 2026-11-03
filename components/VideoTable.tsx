@@ -176,6 +176,136 @@ function EditForm({
   );
 }
 
+// ─── Editable part row ───────────────────────────────────────────────────────
+function PartRow({
+  videoId,
+  part,
+  onUpdate,
+  onDelete,
+}: {
+  videoId: number;
+  part: VideoPart;
+  onUpdate: (updated: VideoPart) => void;
+  onDelete: (partId: number) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [gofile, setGofile]   = useState(part.gofile_url ?? "");
+  const [download, setDownload] = useState(part.download_url ?? "");
+  const [loading, setLoading] = useState(false);
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    const res = await fetch(`/api/videos/${videoId}/parts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        part_number:  part.part_number,
+        gofile_url:   gofile.trim() || null,
+        download_url: download.trim() || null,
+      }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      onUpdate(updated);
+      setEditing(false);
+    }
+    setLoading(false);
+  }
+
+  const inputCls = "h-7 flex-1 min-w-[140px] rounded border border-base-600 bg-base-900 px-2 text-xs text-base-100 placeholder:text-base-600 outline-none focus:border-base-400";
+
+  if (editing) {
+    return (
+      <form
+        onSubmit={save}
+        className="flex flex-wrap items-center gap-2 px-5 py-2 bg-base-900/40"
+      >
+        <span className="w-14 text-xs font-semibold text-base-400">Part {part.part_number}</span>
+        <input
+          type="url"
+          placeholder="Gofile URL"
+          value={gofile}
+          onChange={(e) => setGofile(e.target.value)}
+          className={inputCls}
+        />
+        <input
+          type="url"
+          placeholder="Download URL (tmpfiles)"
+          value={download}
+          onChange={(e) => setDownload(e.target.value)}
+          className={inputCls}
+        />
+        <button
+          type="submit"
+          disabled={loading}
+          className="h-7 rounded bg-base-700 px-3 text-xs font-semibold text-base-200 hover:bg-base-600 disabled:opacity-50"
+        >
+          {loading ? "…" : "Save"}
+        </button>
+        <button
+          type="button"
+          onClick={() => { setGofile(part.gofile_url ?? ""); setDownload(part.download_url ?? ""); setEditing(false); }}
+          className="h-7 rounded px-2 text-base-500 hover:text-base-300"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      </form>
+    );
+  }
+
+  return (
+    <div className="group grid grid-cols-[64px_1fr_1fr_56px] items-center gap-3 px-5 py-2.5 hover:bg-base-800/40 transition-colors">
+      <span className="text-xs font-semibold text-base-400">Part {part.part_number}</span>
+
+      {part.gofile_url ? (
+        <a
+          href={part.gofile_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1.5 truncate text-xs text-base-300 hover:text-accent-500 transition-colors"
+        >
+          <ExternalLink className="h-3 w-3 flex-shrink-0" />
+          <span className="truncate">{part.gofile_url.replace("https://gofile.io/d/", "gofile/")}</span>
+        </a>
+      ) : (
+        <span className="text-xs text-base-600 italic">— no view link</span>
+      )}
+
+      {part.download_url ? (
+        <a
+          href={part.download_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1.5 truncate text-xs text-base-300 hover:text-accent-500 transition-colors"
+        >
+          <Download className="h-3 w-3 flex-shrink-0" />
+          <span className="truncate">Download MP4</span>
+        </a>
+      ) : (
+        <span className="text-xs text-base-600 italic">— no download</span>
+      )}
+
+      <div className="flex items-center justify-end gap-1">
+        <button
+          onClick={() => setEditing(true)}
+          className="rounded p-1 text-base-700 opacity-0 group-hover:opacity-100 hover:text-base-300 transition-all"
+          title="Edit part"
+        >
+          <Pencil className="h-3 w-3" />
+        </button>
+        <button
+          onClick={() => onDelete(part.id)}
+          className="rounded p-1 text-base-700 opacity-0 group-hover:opacity-100 hover:text-danger-500 transition-all"
+          title="Remove part"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Inline add-part form ─────────────────────────────────────────────────────
 function AddPartInline({ videoId, nextPart, onAdded }: { videoId: number; nextPart: number; onAdded: (part: VideoPart) => void }) {
   const [open, setOpen]       = useState(false);
@@ -274,6 +404,13 @@ function VideoCard({ video: initial, onDelete }: { video: Video; onDelete: (id: 
 
   function handlePartAdded(part: VideoPart) {
     setVideo((v) => ({ ...v, parts: [...(v.parts ?? []), part] }));
+  }
+
+  function handlePartUpdated(updated: VideoPart) {
+    setVideo((v) => ({
+      ...v,
+      parts: v.parts?.map((p) => (p.id === updated.id ? updated : p)),
+    }));
   }
 
   function handleSave(updated: Partial<Video>) {
@@ -397,48 +534,13 @@ function VideoCard({ video: initial, onDelete }: { video: Video; onDelete: (id: 
         )}
 
         {parts.map((p) => (
-          <div
+          <PartRow
             key={p.id}
-            className="grid grid-cols-[64px_1fr_1fr_28px] items-center gap-3 px-5 py-2.5 hover:bg-base-800/40 transition-colors"
-          >
-            <span className="text-xs font-semibold text-base-400">Part {p.part_number}</span>
-
-            {p.gofile_url ? (
-              <a
-                href={p.gofile_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 truncate text-xs text-base-300 hover:text-accent-500 transition-colors"
-              >
-                <ExternalLink className="h-3 w-3 flex-shrink-0" />
-                <span className="truncate">{p.gofile_url.replace("https://gofile.io/d/", "gofile/")}</span>
-              </a>
-            ) : (
-              <span className="text-xs text-base-600">— no view link</span>
-            )}
-
-            {p.download_url ? (
-              <a
-                href={p.download_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 truncate text-xs text-base-300 hover:text-accent-500 transition-colors"
-              >
-                <Download className="h-3 w-3 flex-shrink-0" />
-                <span className="truncate">Download MP4</span>
-              </a>
-            ) : (
-              <span className="text-xs text-base-600">— no download</span>
-            )}
-
-            <button
-              onClick={() => handleDeletePart(p.id)}
-              className="justify-self-end rounded p-1 text-base-700 hover:text-danger-500 transition-colors"
-              title="Remove part"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </div>
+            videoId={video.id}
+            part={p}
+            onUpdate={handlePartUpdated}
+            onDelete={handleDeletePart}
+          />
         ))}
 
         {/* Add part */}
