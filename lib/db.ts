@@ -1,4 +1,4 @@
-import { get } from "@vercel/global-config";
+import { kv } from "@vercel/kv";
 
 export type VideoStatus = "planned" | "in_progress" | "completed";
 
@@ -34,44 +34,17 @@ interface Store {
   nextPartId: number;
 }
 
-const EDGE_CONFIG_ID = "ecfg_zgi16o00gpk4tvakqi8hpdl9sup6";
-
 async function readStore(): Promise<Store> {
-  const store = await get<Store>("store");
+  const store = await kv.get<Store>("store");
   return store ?? { videos: [], parts: [], nextVideoId: 1, nextPartId: 1 };
 }
 
 async function writeStore(store: Store): Promise<void> {
-  const token = process.env.VERCEL_API_TOKEN;
-  if (!token) throw new Error("VERCEL_API_TOKEN env var is not set");
-
-  const TEAM = "team_KpSGTlYqKeohdDNcYucm39WE";
-
-  // Try global-config endpoint first, fall back to edge-config
-  for (const base of ["global-config", "edge-config"]) {
-    const url = `https://api.vercel.com/v1/${base}/${EDGE_CONFIG_ID}/items?teamId=${TEAM}`;
-    const res = await fetch(url, {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        items: [{ operation: "upsert", key: "store", value: store }],
-      }),
-    });
-    if (res.ok) return;
-    const text = await res.text();
-    // only retry on 404; any other error is fatal
-    if (!text.includes("not_found")) {
-      throw new Error(`Config write failed (${base}): ${text}`);
-    }
-  }
-  throw new Error("Could not write to Global Config — check VERCEL_API_TOKEN permissions");
+  await kv.set("store", store);
 }
 
 export async function setupSchema() {
-  const existing = await get<Store>("store");
+  const existing = await kv.get("store");
   if (existing) return;
   await writeStore({ videos: [], parts: [], nextVideoId: 1, nextPartId: 1 });
 }
@@ -179,16 +152,9 @@ export async function updateVideo(
   const store = await readStore();
   const idx = store.videos.findIndex((x) => x.id === id);
   if (idx === -1) return null;
-  store.videos[idx] = {
-    ...store.videos[idx],
-    ...data,
-    updated_at: new Date().toISOString(),
-  };
+  store.videos[idx] = { ...store.videos[idx], ...data, updated_at: new Date().toISOString() };
   await writeStore(store);
-  return {
-    ...store.videos[idx],
-    parts: store.parts.filter((p) => p.video_id === id),
-  };
+  return { ...store.videos[idx], parts: store.parts.filter((p) => p.video_id === id) };
 }
 
 export async function deleteVideo(id: number): Promise<void> {
@@ -200,12 +166,7 @@ export async function deleteVideo(id: number): Promise<void> {
 
 export async function addPart(
   videoId: number,
-  data: {
-    part_number: number;
-    gofile_url?: string;
-    download_url?: string;
-    duration_seconds?: number;
-  }
+  data: { part_number: number; gofile_url?: string; download_url?: string; duration_seconds?: number }
 ): Promise<VideoPart> {
   const store = await readStore();
   const now = new Date().toISOString();
@@ -244,8 +205,7 @@ export async function deletePart(partId: number): Promise<void> {
 }
 
 export async function getStats() {
-  const store = await readStore();
-  const { videos, parts } = store;
+  const { videos, parts } = await readStore();
   return {
     totalVideos:   videos.length,
     totalParts:    parts.length,

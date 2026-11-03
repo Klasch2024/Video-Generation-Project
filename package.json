@@ -9,7 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@vercel/global-config": "^1.5.1",
+    "@vercel/kv": "^3.0.0",
     "lucide-react": "^0.511.0",
     "next": "^16.4.4",
     "react": "^19.0.0",
