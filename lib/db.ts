@@ -1,4 +1,4 @@
-import { kv } from "@vercel/kv";
+import { sql } from "@vercel/postgres";
 
 export type VideoStatus = "planned" | "in_progress" | "completed";
 
@@ -27,191 +27,162 @@ export interface Video {
   parts?: VideoPart[];
 }
 
-interface Store {
-  videos: Video[];
-  parts: VideoPart[];
-  nextVideoId: number;
-  nextPartId: number;
-}
-
-async function readStore(): Promise<Store> {
-  const store = await kv.get<Store>("store");
-  return store ?? { videos: [], parts: [], nextVideoId: 1, nextPartId: 1 };
-}
-
-async function writeStore(store: Store): Promise<void> {
-  await kv.set("store", store);
-}
-
 export async function setupSchema() {
-  const existing = await kv.get("store");
-  if (existing) return;
-  await writeStore({ videos: [], parts: [], nextVideoId: 1, nextPartId: 1 });
+  await sql`
+    CREATE TABLE IF NOT EXISTS videos (
+      id             SERIAL PRIMARY KEY,
+      title          TEXT NOT NULL,
+      topic          TEXT,
+      thread_url     TEXT,
+      status         TEXT NOT NULL DEFAULT 'planned',
+      tiktok_posted  BOOLEAN NOT NULL DEFAULT FALSE,
+      youtube_posted BOOLEAN NOT NULL DEFAULT FALSE,
+      bg_music_url   TEXT,
+      description    TEXT,
+      created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS video_parts (
+      id               SERIAL PRIMARY KEY,
+      video_id         INT NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+      part_number      INT NOT NULL,
+      gofile_url       TEXT,
+      download_url     TEXT,
+      duration_seconds INT,
+      created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(video_id, part_number)
+    )
+  `;
 }
 
 export async function seedData() {
-  const store = await readStore();
-  if (store.videos.length > 0) return;
+  const { rows } = await sql`SELECT COUNT(*) AS n FROM videos`;
+  if (Number(rows[0].n) > 0) return;
 
-  const now = new Date().toISOString();
+  await sql`INSERT INTO videos (title, topic, status) VALUES ('Hello Aoi', 'Demo', 'completed')`;
 
-  const videos: Video[] = [
-    {
-      id: 1, title: "Hello Aoi", topic: "Demo",
-      thread_url: null, status: "completed",
-      tiktok_posted: false, youtube_posted: false,
-      bg_music_url: null, description: null,
-      created_at: now, updated_at: now,
-    },
-    {
-      id: 2, title: "How To Increase Testosterone Naturally", topic: "Testosterone",
-      thread_url: null, status: "completed",
-      tiktok_posted: true, youtube_posted: true,
-      bg_music_url: null,
-      description: "Testosteronemaxxing guide — boost T naturally #testosterone #looksmaxing",
-      created_at: now, updated_at: now,
-    },
-    {
-      id: 3, title: "The Ultimate Lipmaxing Guide", topic: "Lipmaxing",
-      thread_url: null, status: "completed",
-      tiktok_posted: true, youtube_posted: true,
-      bg_music_url: null,
-      description: "The ultimate lipmaxing guide #lipmaxing #looksmaxing",
-      created_at: now, updated_at: now,
-    },
-    {
-      id: 4, title: "The Looksmaxing Guide To Neck Training", topic: "Neck Training",
-      thread_url: null, status: "completed",
-      tiktok_posted: false, youtube_posted: false,
-      bg_music_url: "https://www.youtube.com/watch?v=aQkfOkFvx2U",
-      description: "The looksmaxing guide to neck training #necktraining #looksmaxing",
-      created_at: now, updated_at: now,
-    },
-  ];
+  const { rows: [v2] } = await sql`
+    INSERT INTO videos (title, topic, status, tiktok_posted, youtube_posted, description)
+    VALUES ('How To Increase Testosterone Naturally', 'Testosterone', 'completed', true, true,
+            'Testosteronemaxxing guide — boost T naturally #testosterone #looksmaxing')
+    RETURNING id`;
+  await sql`INSERT INTO video_parts (video_id, part_number, gofile_url, download_url) VALUES
+    (${v2.id}, 1, 'https://gofile.io/d/6YdhloTU',  'https://tmpfiles.org/dl/wUADohVqNROC/testosteronemaxxing_part1_with_music.mp4'),
+    (${v2.id}, 2, 'https://gofile.io/d/gUjBCMK7',  'https://tmpfiles.org/dl/w1AGoEVSNYhe/testosteronemaxxing_part2_with_music.mp4'),
+    (${v2.id}, 3, 'https://gofile.io/d/PvcRT6Xn',  'https://tmpfiles.org/dl/wkA4oAVoNVNw/testosteronemaxxing_part3_with_music.mp4')`;
 
-  const parts: VideoPart[] = [
-    { id: 1, video_id: 2, part_number: 1, gofile_url: "https://gofile.io/d/6YdhloTU", download_url: "https://tmpfiles.org/dl/wUADohVqNROC/testosteronemaxxing_part1_with_music.mp4", duration_seconds: null, created_at: now },
-    { id: 2, video_id: 2, part_number: 2, gofile_url: "https://gofile.io/d/gUjBCMK7", download_url: "https://tmpfiles.org/dl/w1AGoEVSNYhe/testosteronemaxxing_part2_with_music.mp4", duration_seconds: null, created_at: now },
-    { id: 3, video_id: 2, part_number: 3, gofile_url: "https://gofile.io/d/PvcRT6Xn", download_url: "https://tmpfiles.org/dl/wkA4oAVoNVNw/testosteronemaxxing_part3_with_music.mp4", duration_seconds: null, created_at: now },
-    { id: 4, video_id: 3, part_number: 1, gofile_url: "https://gofile.io/d/JPTCos9P", download_url: null, duration_seconds: null, created_at: now },
-    { id: 5, video_id: 3, part_number: 2, gofile_url: "https://gofile.io/d/PcFTBlkj", download_url: null, duration_seconds: null, created_at: now },
-    { id: 6, video_id: 3, part_number: 3, gofile_url: "https://gofile.io/d/P22CiAHH", download_url: null, duration_seconds: null, created_at: now },
-    { id: 7, video_id: 4, part_number: 1, gofile_url: "https://gofile.io/d/4qX1BdYr", download_url: "https://tmpfiles.org/dl/weAaoMoblKah/necktraining_part1_with_music.mp4", duration_seconds: null, created_at: now },
-  ];
+  const { rows: [v3] } = await sql`
+    INSERT INTO videos (title, topic, status, tiktok_posted, youtube_posted, description)
+    VALUES ('The Ultimate Lipmaxing Guide', 'Lipmaxing', 'completed', true, true,
+            'The ultimate lipmaxing guide #lipmaxing #looksmaxing')
+    RETURNING id`;
+  await sql`INSERT INTO video_parts (video_id, part_number, gofile_url) VALUES
+    (${v3.id}, 1, 'https://gofile.io/d/JPTCos9P'),
+    (${v3.id}, 2, 'https://gofile.io/d/PcFTBlkj'),
+    (${v3.id}, 3, 'https://gofile.io/d/P22CiAHH')`;
 
-  await writeStore({ videos, parts, nextVideoId: 5, nextPartId: 8 });
+  const { rows: [v4] } = await sql`
+    INSERT INTO videos (title, topic, status, bg_music_url, description)
+    VALUES ('The Looksmaxing Guide To Neck Training', 'Neck Training', 'completed',
+            'https://www.youtube.com/watch?v=aQkfOkFvx2U',
+            'The looksmaxing guide to neck training #necktraining #looksmaxing')
+    RETURNING id`;
+  await sql`INSERT INTO video_parts (video_id, part_number, gofile_url, download_url) VALUES
+    (${v4.id}, 1, 'https://gofile.io/d/4qX1BdYr', 'https://tmpfiles.org/dl/weAaoMoblKah/necktraining_part1_with_music.mp4')`;
 }
 
 export async function getVideos(): Promise<Video[]> {
-  const store = await readStore();
-  return store.videos.map((v) => ({
-    ...v,
-    parts: store.parts.filter((p) => p.video_id === v.id),
-  }));
+  const { rows: videos } = await sql<Video>`SELECT * FROM videos ORDER BY created_at DESC`;
+  const { rows: parts }  = await sql<VideoPart>`SELECT * FROM video_parts ORDER BY video_id, part_number`;
+  return videos.map((v) => ({ ...v, parts: parts.filter((p) => p.video_id === v.id) }));
 }
 
 export async function getVideo(id: number): Promise<Video | null> {
-  const store = await readStore();
-  const v = store.videos.find((x) => x.id === id);
-  if (!v) return null;
-  return { ...v, parts: store.parts.filter((p) => p.video_id === id) };
+  const { rows } = await sql<Video>`SELECT * FROM videos WHERE id = ${id}`;
+  if (!rows[0]) return null;
+  const { rows: parts } = await sql<VideoPart>`SELECT * FROM video_parts WHERE video_id = ${id} ORDER BY part_number`;
+  return { ...rows[0], parts };
 }
 
 export async function createVideo(data: {
-  title: string;
-  topic?: string;
-  thread_url?: string;
-  bg_music_url?: string;
-  description?: string;
+  title: string; topic?: string; thread_url?: string; bg_music_url?: string; description?: string;
 }): Promise<Video> {
-  const store = await readStore();
-  const now = new Date().toISOString();
-  const video: Video = {
-    id: store.nextVideoId,
-    title: data.title,
-    topic: data.topic ?? null,
-    thread_url: data.thread_url ?? null,
-    status: "planned",
-    tiktok_posted: false,
-    youtube_posted: false,
-    bg_music_url: data.bg_music_url ?? null,
-    description: data.description ?? null,
-    created_at: now,
-    updated_at: now,
-  };
-  store.videos.push(video);
-  store.nextVideoId++;
-  await writeStore(store);
-  return { ...video, parts: [] };
+  const { rows } = await sql<Video>`
+    INSERT INTO videos (title, topic, thread_url, bg_music_url, description)
+    VALUES (${data.title}, ${data.topic ?? null}, ${data.thread_url ?? null},
+            ${data.bg_music_url ?? null}, ${data.description ?? null})
+    RETURNING *`;
+  return { ...rows[0], parts: [] };
 }
 
 export async function updateVideo(
   id: number,
-  data: Partial<Pick<Video, "title" | "topic" | "thread_url" | "status" | "tiktok_posted" | "youtube_posted" | "bg_music_url" | "description">>
+  data: Partial<Pick<Video, "title"|"topic"|"thread_url"|"status"|"tiktok_posted"|"youtube_posted"|"bg_music_url"|"description">>
 ): Promise<Video | null> {
-  const store = await readStore();
-  const idx = store.videos.findIndex((x) => x.id === id);
-  if (idx === -1) return null;
-  store.videos[idx] = { ...store.videos[idx], ...data, updated_at: new Date().toISOString() };
-  await writeStore(store);
-  return { ...store.videos[idx], parts: store.parts.filter((p) => p.video_id === id) };
+  const sets: string[] = [];
+  const values: unknown[] = [];
+  let i = 1;
+  if (data.title          !== undefined) { sets.push(`title=$${i++}`);          values.push(data.title); }
+  if (data.topic          !== undefined) { sets.push(`topic=$${i++}`);          values.push(data.topic); }
+  if (data.thread_url     !== undefined) { sets.push(`thread_url=$${i++}`);     values.push(data.thread_url); }
+  if (data.status         !== undefined) { sets.push(`status=$${i++}`);         values.push(data.status); }
+  if (data.tiktok_posted  !== undefined) { sets.push(`tiktok_posted=$${i++}`);  values.push(data.tiktok_posted); }
+  if (data.youtube_posted !== undefined) { sets.push(`youtube_posted=$${i++}`); values.push(data.youtube_posted); }
+  if (data.bg_music_url   !== undefined) { sets.push(`bg_music_url=$${i++}`);   values.push(data.bg_music_url); }
+  if (data.description    !== undefined) { sets.push(`description=$${i++}`);    values.push(data.description); }
+  if (!sets.length) return getVideo(id);
+  sets.push(`updated_at=NOW()`);
+  values.push(id);
+  const { rows } = await sql.query<Video>(`UPDATE videos SET ${sets.join(",")} WHERE id=$${i} RETURNING *`, values);
+  if (!rows[0]) return null;
+  const { rows: parts } = await sql<VideoPart>`SELECT * FROM video_parts WHERE video_id=${id} ORDER BY part_number`;
+  return { ...rows[0], parts };
 }
 
 export async function deleteVideo(id: number): Promise<void> {
-  const store = await readStore();
-  store.videos = store.videos.filter((x) => x.id !== id);
-  store.parts = store.parts.filter((p) => p.video_id !== id);
-  await writeStore(store);
+  await sql`DELETE FROM videos WHERE id = ${id}`;
 }
 
-export async function addPart(
-  videoId: number,
-  data: { part_number: number; gofile_url?: string; download_url?: string; duration_seconds?: number }
-): Promise<VideoPart> {
-  const store = await readStore();
-  const now = new Date().toISOString();
-  const existing = store.parts.findIndex(
-    (p) => p.video_id === videoId && p.part_number === data.part_number
-  );
-  let part: VideoPart;
-  if (existing !== -1) {
-    store.parts[existing] = {
-      ...store.parts[existing],
-      gofile_url: data.gofile_url ?? null,
-      download_url: data.download_url ?? null,
-      duration_seconds: data.duration_seconds ?? null,
-    };
-    part = store.parts[existing];
-  } else {
-    part = {
-      id: store.nextPartId++,
-      video_id: videoId,
-      part_number: data.part_number,
-      gofile_url: data.gofile_url ?? null,
-      download_url: data.download_url ?? null,
-      duration_seconds: data.duration_seconds ?? null,
-      created_at: now,
-    };
-    store.parts.push(part);
-  }
-  await writeStore(store);
-  return part;
+export async function addPart(videoId: number, data: {
+  part_number: number; gofile_url?: string; download_url?: string; duration_seconds?: number;
+}): Promise<VideoPart> {
+  const { rows } = await sql<VideoPart>`
+    INSERT INTO video_parts (video_id, part_number, gofile_url, download_url, duration_seconds)
+    VALUES (${videoId}, ${data.part_number}, ${data.gofile_url ?? null},
+            ${data.download_url ?? null}, ${data.duration_seconds ?? null})
+    ON CONFLICT (video_id, part_number) DO UPDATE
+      SET gofile_url=EXCLUDED.gofile_url, download_url=EXCLUDED.download_url,
+          duration_seconds=EXCLUDED.duration_seconds
+    RETURNING *`;
+  return rows[0];
 }
 
 export async function deletePart(partId: number): Promise<void> {
-  const store = await readStore();
-  store.parts = store.parts.filter((p) => p.id !== partId);
-  await writeStore(store);
+  await sql`DELETE FROM video_parts WHERE id = ${partId}`;
 }
 
 export async function getStats() {
-  const { videos, parts } = await readStore();
+  const { rows: [c] } = await sql<{
+    total_videos: string; total_parts: string;
+    youtube_posted: string; tiktok_posted: string;
+    completed: string; in_progress: string;
+  }>`
+    SELECT
+      COUNT(DISTINCT v.id)::text AS total_videos,
+      COUNT(p.id)::text          AS total_parts,
+      SUM(CASE WHEN v.youtube_posted THEN 1 ELSE 0 END)::text AS youtube_posted,
+      SUM(CASE WHEN v.tiktok_posted  THEN 1 ELSE 0 END)::text AS tiktok_posted,
+      SUM(CASE WHEN v.status='completed'   THEN 1 ELSE 0 END)::text AS completed,
+      SUM(CASE WHEN v.status='in_progress' THEN 1 ELSE 0 END)::text AS in_progress
+    FROM videos v LEFT JOIN video_parts p ON p.video_id=v.id`;
   return {
-    totalVideos:   videos.length,
-    totalParts:    parts.length,
-    youtubePosted: videos.filter((v) => v.youtube_posted).length,
-    tiktokPosted:  videos.filter((v) => v.tiktok_posted).length,
-    completed:     videos.filter((v) => v.status === "completed").length,
-    inProgress:    videos.filter((v) => v.status === "in_progress").length,
+    totalVideos:   Number(c.total_videos),
+    totalParts:    Number(c.total_parts),
+    youtubePosted: Number(c.youtube_posted),
+    tiktokPosted:  Number(c.tiktok_posted),
+    completed:     Number(c.completed),
+    inProgress:    Number(c.in_progress),
   };
 }
