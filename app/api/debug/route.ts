@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 export async function GET() {
   return NextResponse.json({
+    GLOBAL_CONFIG:      process.env.GLOBAL_CONFIG ? "SET" : "MISSING",
     EDGE_CONFIG:        process.env.EDGE_CONFIG ? "SET" : "MISSING",
     VERCEL_API_TOKEN:   process.env.VERCEL_API_TOKEN ? "SET" : "MISSING",
     POSTGRES_URL:       process.env.POSTGRES_URL ? "SET" : "MISSING",

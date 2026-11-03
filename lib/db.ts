@@ -1,4 +1,4 @@
-import { get, createClient } from "@vercel/edge-config";
+import { get } from "@vercel/global-config";
 
 export type VideoStatus = "planned" | "in_progress" | "completed";
 
