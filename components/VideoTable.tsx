@@ -1,7 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Download, ExternalLink, Trash2, Plus, Check, X, Music, Link2 } from "lucide-react";
+import {
+  Download, ExternalLink, Trash2, Plus, Check, X,
+  Music, Link2, Pencil, Save, ChevronDown, ChevronUp,
+} from "lucide-react";
 import type { Video, VideoStatus, VideoPart } from "@/lib/db";
 
 function cn(...c: (string | false | undefined | null)[]) {
@@ -9,11 +12,12 @@ function cn(...c: (string | false | undefined | null)[]) {
 }
 
 async function apiPatch(id: number, body: Record<string, unknown>) {
-  await fetch(`/api/videos/${id}`, {
+  const res = await fetch(`/api/videos/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+  return res.ok;
 }
 
 const STATUS_STYLES: Record<VideoStatus, string> = {
@@ -22,20 +26,8 @@ const STATUS_STYLES: Record<VideoStatus, string> = {
   completed:   "bg-success-500/15 text-success-500",
 };
 
-const STATUS_LABELS: Record<VideoStatus, string> = {
-  planned:     "Planned",
-  in_progress: "In Progress",
-  completed:   "Completed",
-};
-
-// ─── Inline status dropdown ───────────────────────────────────────────────────
-function StatusPill({
-  status,
-  onChange,
-}: {
-  status: VideoStatus;
-  onChange: (s: VideoStatus) => void;
-}) {
+// ─── Status pill ──────────────────────────────────────────────────────────────
+function StatusPill({ status, onChange }: { status: VideoStatus; onChange: (s: VideoStatus) => void }) {
   return (
     <select
       value={status}
@@ -52,25 +44,15 @@ function StatusPill({
   );
 }
 
-// ─── Platform toggle button ───────────────────────────────────────────────────
-function PlatformToggle({
-  label,
-  posted,
-  onToggle,
-}: {
-  label: string;
-  posted: boolean;
-  onToggle: () => void;
-}) {
+// ─── Platform toggle ──────────────────────────────────────────────────────────
+function PlatformToggle({ label, posted, onToggle }: { label: string; posted: boolean; onToggle: () => void }) {
   return (
     <button
       onClick={onToggle}
-      title={posted ? `${label}: posted` : `${label}: not posted — click to mark`}
+      title={posted ? `${label}: posted — click to unmark` : `${label}: not posted — click to mark`}
       className={cn(
         "flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-colors",
-        posted
-          ? "bg-success-500/15 text-success-500"
-          : "bg-base-700 text-base-500 hover:text-base-300"
+        posted ? "bg-success-500/15 text-success-500" : "bg-base-700 text-base-500 hover:text-base-300"
       )}
     >
       {posted && <Check className="h-3 w-3" />}
@@ -79,21 +61,128 @@ function PlatformToggle({
   );
 }
 
-// ─── Inline add-part form ─────────────────────────────────────────────────────
-function AddPartInline({
-  videoId,
-  nextPart,
-  onAdded,
+// ─── Inline edit form for video metadata ─────────────────────────────────────
+function EditForm({
+  video,
+  onSave,
+  onCancel,
 }: {
-  videoId: number;
-  nextPart: number;
-  onAdded: (part: VideoPart) => void;
+  video: Video;
+  onSave: (updated: Partial<Video>) => void;
+  onCancel: () => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [title, setTitle]       = useState(video.title);
+  const [topic, setTopic]       = useState(video.topic ?? "");
+  const [music, setMusic]       = useState(video.bg_music_url ?? "");
+  const [thread, setThread]     = useState(video.thread_url ?? "");
+  const [desc, setDesc]         = useState(video.description ?? "");
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState("");
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!title.trim()) { setError("Title is required."); return; }
+    setLoading(true);
+    const patch = {
+      title:        title.trim(),
+      topic:        topic.trim() || null,
+      bg_music_url: music.trim() || null,
+      thread_url:   thread.trim() || null,
+      description:  desc.trim() || null,
+    };
+    const ok = await apiPatch(video.id, patch);
+    if (!ok) { setError("Save failed — try again."); setLoading(false); return; }
+    onSave(patch);
+    setLoading(false);
+  }
+
+  const inputCls = "w-full rounded-lg border border-base-600 bg-base-900 px-3 py-2 text-sm text-base-100 placeholder:text-base-600 outline-none focus:border-base-400";
+
+  return (
+    <form onSubmit={handleSave} className="space-y-3 border-t border-base-700 bg-base-900/50 px-5 py-4">
+      <p className="text-[11px] font-semibold uppercase tracking-widest text-base-500">Edit details</p>
+
+      {error && (
+        <p className="rounded-lg bg-danger-500/10 px-3 py-1.5 text-xs text-danger-500">{error}</p>
+      )}
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="space-y-1 sm:col-span-2">
+          <label className="text-[11px] font-medium text-base-500">Title *</label>
+          <input value={title} onChange={(e) => setTitle(e.target.value)} className={inputCls} />
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-[11px] font-medium text-base-500">Topic</label>
+          <input
+            value={topic}
+            onChange={(e) => setTopic(e.target.value)}
+            placeholder="Testosterone, Lipmaxing…"
+            className={inputCls}
+          />
+        </div>
+
+        <div className="space-y-1">
+          <label className="text-[11px] font-medium text-base-500">Background Music URL</label>
+          <input
+            type="url"
+            value={music}
+            onChange={(e) => setMusic(e.target.value)}
+            placeholder="https://www.youtube.com/watch?v=…"
+            className={inputCls}
+          />
+        </div>
+
+        <div className="space-y-1 sm:col-span-2">
+          <label className="text-[11px] font-medium text-base-500">Source Thread URL</label>
+          <input
+            type="url"
+            value={thread}
+            onChange={(e) => setThread(e.target.value)}
+            placeholder="https://looksmax.org/threads/…"
+            className={inputCls}
+          />
+        </div>
+
+        <div className="space-y-1 sm:col-span-2">
+          <label className="text-[11px] font-medium text-base-500">Description / Hashtags</label>
+          <textarea
+            rows={3}
+            value={desc}
+            onChange={(e) => setDesc(e.target.value)}
+            placeholder="Short description and hashtags for social posting…"
+            className={cn(inputCls, "resize-none")}
+          />
+        </div>
+      </div>
+
+      <div className="flex justify-end gap-2 pt-1">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="flex items-center gap-1.5 rounded-lg border border-base-600 px-4 py-1.5 text-xs font-medium text-base-400 hover:bg-base-800"
+        >
+          <X className="h-3 w-3" /> Cancel
+        </button>
+        <button
+          type="submit"
+          disabled={loading}
+          className="flex items-center gap-1.5 rounded-lg bg-accent-500 px-4 py-1.5 text-xs font-semibold text-ink disabled:opacity-60 hover:opacity-90 transition-opacity"
+        >
+          <Save className="h-3 w-3" /> {loading ? "Saving…" : "Save"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+// ─── Inline add-part form ─────────────────────────────────────────────────────
+function AddPartInline({ videoId, nextPart, onAdded }: { videoId: number; nextPart: number; onAdded: (part: VideoPart) => void }) {
+  const [open, setOpen]       = useState(false);
   const [loading, setLoading] = useState(false);
-  const [gofile, setGofile] = useState("");
+  const [gofile, setGofile]   = useState("");
   const [download, setDownload] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError]     = useState("");
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -103,16 +192,12 @@ function AddPartInline({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        part_number: nextPart,
-        gofile_url: gofile.trim() || undefined,
+        part_number:  nextPart,
+        gofile_url:   gofile.trim() || undefined,
         download_url: download.trim() || undefined,
       }),
     });
-    if (!res.ok) {
-      setError("Failed to add part.");
-      setLoading(false);
-      return;
-    }
+    if (!res.ok) { setError("Failed to add part."); setLoading(false); return; }
     const part = await res.json();
     onAdded(part);
     setGofile("");
@@ -125,7 +210,7 @@ function AddPartInline({
     return (
       <button
         onClick={() => setOpen(true)}
-        className="flex items-center gap-1.5 text-xs font-medium text-base-500 hover:text-base-300 transition-colors py-2"
+        className="flex items-center gap-1.5 py-2 text-xs font-medium text-base-600 hover:text-base-300 transition-colors"
       >
         <Plus className="h-3.5 w-3.5" />
         Add part {nextPart}
@@ -135,20 +220,20 @@ function AddPartInline({
 
   return (
     <form onSubmit={submit} className="flex flex-wrap items-center gap-2 py-2">
-      <span className="w-16 text-xs font-semibold text-base-400">Part {nextPart}</span>
+      <span className="w-14 text-xs font-semibold text-base-400">Part {nextPart}</span>
       <input
         type="url"
         placeholder="Gofile URL (view)"
         value={gofile}
         onChange={(e) => setGofile(e.target.value)}
-        className="h-8 flex-1 min-w-[180px] rounded-lg border border-base-600 bg-base-900 px-3 text-xs text-base-100 placeholder:text-base-600 outline-none focus:border-accent-600"
+        className="h-8 flex-1 min-w-[160px] rounded-lg border border-base-600 bg-base-900 px-3 text-xs text-base-100 placeholder:text-base-600 outline-none focus:border-base-400"
       />
       <input
         type="url"
         placeholder="Download URL (tmpfiles)"
         value={download}
         onChange={(e) => setDownload(e.target.value)}
-        className="h-8 flex-1 min-w-[180px] rounded-lg border border-base-600 bg-base-900 px-3 text-xs text-base-100 placeholder:text-base-600 outline-none focus:border-accent-600"
+        className="h-8 flex-1 min-w-[160px] rounded-lg border border-base-600 bg-base-900 px-3 text-xs text-base-100 placeholder:text-base-600 outline-none focus:border-base-400"
       />
       {error && <span className="text-xs text-danger-500">{error}</span>}
       <button
@@ -158,11 +243,7 @@ function AddPartInline({
       >
         {loading ? "…" : "Save"}
       </button>
-      <button
-        type="button"
-        onClick={() => setOpen(false)}
-        className="h-8 rounded-lg px-2 text-base-500 hover:text-base-300"
-      >
+      <button type="button" onClick={() => setOpen(false)} className="h-8 rounded-lg px-2 text-base-500 hover:text-base-300">
         <X className="h-3.5 w-3.5" />
       </button>
     </form>
@@ -170,14 +251,10 @@ function AddPartInline({
 }
 
 // ─── Video card ───────────────────────────────────────────────────────────────
-function VideoCard({
-  video: initial,
-  onDelete,
-}: {
-  video: Video;
-  onDelete: (id: number) => void;
-}) {
-  const [video, setVideo] = useState(initial);
+function VideoCard({ video: initial, onDelete }: { video: Video; onDelete: (id: number) => void }) {
+  const [video, setVideo]   = useState(initial);
+  const [editing, setEditing] = useState(false);
+  const [expanded, setExpanded] = useState(true);
 
   async function handleStatus(status: VideoStatus) {
     await apiPatch(video.id, { status });
@@ -199,64 +276,46 @@ function VideoCard({
     setVideo((v) => ({ ...v, parts: [...(v.parts ?? []), part] }));
   }
 
-  const parts = video.parts ?? [];
+  function handleSave(updated: Partial<Video>) {
+    setVideo((v) => ({ ...v, ...updated }));
+    setEditing(false);
+  }
+
+  const parts    = video.parts ?? [];
   const nextPart = parts.length + 1;
 
   return (
     <div className="overflow-hidden rounded-2xl border border-base-700 bg-base-850">
-      {/* ── Card header ── */}
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-base-700 bg-base-800/60 px-5 py-4">
+
+      {/* ── Header ── */}
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-base-700 bg-base-800/50 px-5 py-4">
         <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-semibold text-base-50 leading-snug">
-            {video.title}
-          </h3>
-          <div className="mt-1 flex flex-wrap items-center gap-3">
-            {video.topic && (
-              <span className="text-xs text-base-500">{video.topic}</span>
-            )}
-            {video.bg_music_url && (
-              <a
-                href={video.bg_music_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1 text-xs text-base-500 hover:text-base-300 transition-colors"
-              >
-                <Music className="h-3 w-3" />
-                Music
-              </a>
-            )}
-            {video.thread_url && (
-              <a
-                href={video.thread_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1 text-xs text-base-500 hover:text-base-300 transition-colors"
-              >
-                <Link2 className="h-3 w-3" />
-                Thread
-              </a>
-            )}
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold leading-snug text-base-50">{video.title}</h3>
           </div>
+          {video.topic && (
+            <span className="mt-0.5 inline-block text-xs text-base-500">{video.topic}</span>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <StatusPill status={video.status} onChange={handleStatus} />
-          <PlatformToggle
-            label="YouTube"
-            posted={video.youtube_posted}
-            onToggle={() => handlePlatform("youtube_posted")}
-          />
-          <PlatformToggle
-            label="TikTok"
-            posted={video.tiktok_posted}
-            onToggle={() => handlePlatform("tiktok_posted")}
-          />
+          <PlatformToggle label="YouTube" posted={video.youtube_posted} onToggle={() => handlePlatform("youtube_posted")} />
+          <PlatformToggle label="TikTok"  posted={video.tiktok_posted}  onToggle={() => handlePlatform("tiktok_posted")} />
+
           <button
-            onClick={() => {
-              if (confirm(`Delete "${video.title}" and all its parts?`)) {
-                onDelete(video.id);
-              }
-            }}
+            onClick={() => { setEditing((e) => !e); setExpanded(true); }}
+            title="Edit details"
+            className={cn(
+              "rounded-lg p-1.5 transition-colors",
+              editing ? "bg-base-700 text-base-200" : "text-base-600 hover:bg-base-700 hover:text-base-200"
+            )}
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
+
+          <button
+            onClick={() => { if (confirm(`Delete "${video.title}"?`)) onDelete(video.id); }}
             className="rounded-lg p-1.5 text-base-600 hover:bg-base-700 hover:text-danger-500 transition-colors"
             title="Delete video"
           >
@@ -265,28 +324,91 @@ function VideoCard({
         </div>
       </div>
 
-      {/* ── Parts table ── */}
+      {/* ── Info bar (music / thread / description preview) ── */}
+      <div
+        className={cn(
+          "border-b border-base-700/60 px-5",
+          (video.bg_music_url || video.thread_url || video.description) ? "" : "hidden"
+        )}
+      >
+        <button
+          onClick={() => setExpanded((e) => !e)}
+          className="flex w-full items-center justify-between py-2.5 text-left"
+        >
+          <div className="flex flex-wrap items-center gap-4">
+            {video.bg_music_url && (
+              <a
+                href={video.bg_music_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="flex items-center gap-1.5 text-xs text-base-500 hover:text-base-300 transition-colors"
+              >
+                <Music className="h-3 w-3" />
+                Background Music ↗
+              </a>
+            )}
+            {video.thread_url && (
+              <a
+                href={video.thread_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="flex items-center gap-1.5 text-xs text-base-500 hover:text-base-300 transition-colors"
+              >
+                <Link2 className="h-3 w-3" />
+                Source Thread ↗
+              </a>
+            )}
+            {video.description && (
+              <span className="max-w-md truncate text-xs text-base-600 italic">
+                {video.description}
+              </span>
+            )}
+          </div>
+          <span className="ml-2 flex-shrink-0 text-base-600">
+            {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          </span>
+        </button>
+
+        {/* Expanded description */}
+        {expanded && video.description && (
+          <div className="pb-3">
+            <p className="rounded-lg bg-base-900/60 px-3 py-2.5 text-xs leading-relaxed text-base-400">
+              {video.description}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* ── Edit form ── */}
+      {editing && (
+        <EditForm
+          video={video}
+          onSave={handleSave}
+          onCancel={() => setEditing(false)}
+        />
+      )}
+
+      {/* ── Parts ── */}
       <div className="divide-y divide-base-700/60">
         {parts.length === 0 && (
-          <div className="px-5 py-3 text-xs text-base-600 italic">No parts yet</div>
+          <div className="px-5 py-2.5 text-xs italic text-base-600">No parts yet</div>
         )}
 
         {parts.map((p) => (
           <div
             key={p.id}
-            className="grid grid-cols-[64px_1fr_1fr_32px] items-center gap-3 px-5 py-2.5 hover:bg-base-800/40 transition-colors"
+            className="grid grid-cols-[64px_1fr_1fr_28px] items-center gap-3 px-5 py-2.5 hover:bg-base-800/40 transition-colors"
           >
-            <span className="text-xs font-semibold text-base-400">
-              Part {p.part_number}
-            </span>
+            <span className="text-xs font-semibold text-base-400">Part {p.part_number}</span>
 
-            {/* Gofile / view */}
             {p.gofile_url ? (
               <a
                 href={p.gofile_url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-1.5 text-xs text-base-300 hover:text-accent-500 transition-colors truncate"
+                className="flex items-center gap-1.5 truncate text-xs text-base-300 hover:text-accent-500 transition-colors"
               >
                 <ExternalLink className="h-3 w-3 flex-shrink-0" />
                 <span className="truncate">{p.gofile_url.replace("https://gofile.io/d/", "gofile/")}</span>
@@ -295,13 +417,12 @@ function VideoCard({
               <span className="text-xs text-base-600">— no view link</span>
             )}
 
-            {/* Download */}
             {p.download_url ? (
               <a
                 href={p.download_url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-1.5 text-xs text-base-300 hover:text-accent-500 transition-colors truncate"
+                className="flex items-center gap-1.5 truncate text-xs text-base-300 hover:text-accent-500 transition-colors"
               >
                 <Download className="h-3 w-3 flex-shrink-0" />
                 <span className="truncate">Download MP4</span>
@@ -322,20 +443,9 @@ function VideoCard({
 
         {/* Add part */}
         <div className="px-5">
-          <AddPartInline
-            videoId={video.id}
-            nextPart={nextPart}
-            onAdded={handlePartAdded}
-          />
+          <AddPartInline videoId={video.id} nextPart={nextPart} onAdded={handlePartAdded} />
         </div>
       </div>
-
-      {/* ── Description ── */}
-      {video.description && (
-        <div className="border-t border-base-700/60 px-5 py-3">
-          <p className="text-xs leading-relaxed text-base-500">{video.description}</p>
-        </div>
-      )}
     </div>
   );
 }
